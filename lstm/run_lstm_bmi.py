@@ -7,6 +7,7 @@ from pathlib import Path
 from netCDF4 import Dataset
 # This is the BMI LSTM that we will be running
 import bmi_lstm
+from .logger import configure_logging, logger
 
 
 # Define primary bmi config and input data file paths 
