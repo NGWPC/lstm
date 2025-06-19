@@ -100,20 +100,22 @@ def get_log_file_path():
                 logFile = open(logFilePath, "w")
             if (moduleLogEnvExists == False):
                 os.environ[EV_MODULE_LOGFILEPATH] = logFilePath 
-                print(f"Module {MODULE_NAME} Log File: {logFilePath}")
+                print(f"Module {MODULE_NAME} Log File: {logFilePath}", flush=True)
         else:
             raise IOError
     except:
-        print(f"Unable to open log file for {MODULE_NAME}: {logFilePath}")
-        print(f"Log entries will be writen to stdout")
+        print(f"Unable to open log file for {MODULE_NAME}: {logFilePath}", flush=True)
+        print(f"Log entries will be writen to stdout", flush=True)
 
     return logFilePath, appendEntries
     
 def get_log_level() -> str:
     levelEnvVar = os.getenv(EV_MODULE_LOGLEVEL, "")
     if levelEnvVar:
+        print(f"{EV_MODULE_LOGLEVEL}={levelEnvVar}", flush=True)
         return levelEnvVar.strip().upper()
     else:
+        print(f"{EV_MODULE_LOGLEVEL} not found. Using INFO log level", flush=True)
         return "INFO"
 
 def translate_ngwpc_log_level(ngwpc_log_level: str) -> str:
@@ -124,7 +126,7 @@ def translate_ngwpc_log_level(ngwpc_log_level: str) -> str:
         return "CRITICAL"
     return ll
     
-def configure_logging(level: logging._Level = logging.INFO):
+def configure_logging():
     '''
     Set logging level and specify logger configuration based on environment variables set by ngen
     
@@ -154,14 +156,17 @@ def configure_logging(level: logging._Level = logging.INFO):
     loggingEnabled = True
     moduleEnvVar = os.getenv(EV_EWTS_LOGGING, "")
     if moduleEnvVar:
+        print(f"{EV_EWTS_LOGGING}={moduleEnvVar}", flush=True)
         if (moduleEnvVar == "DISABLED"):
             loggingEnabled = False
+    else:
+        print(f"{EV_EWTS_LOGGING} not found.", flush=True)
 
     if (loggingEnabled == False):
-        print(f"Module {MODULE_NAME} Logging DISABLED")
+        print(f"Module {MODULE_NAME} Logging DISABLED", flush=True)
         logging.disable(logging.CRITICAL)  # Disables all logs at CRITICAL and below (i.e., everything)
     else:
-        print(f"Module {MODULE_NAME} Logging ENABLED")
+        print(f"Module {MODULE_NAME} Logging ENABLED", flush=True)
 
         # Get the log file name from env var or a default 
         logFilePath, appendEntries = get_log_file_path()
@@ -203,7 +208,7 @@ def configure_logging(level: logging._Level = logging.INFO):
             
             # Log the message at INFO level
             logging.info(f"Log level set to {log_level}")
-            print(f"Module {MODULE_NAME} Log Level set to {log_level}")
+            print(f"Module {MODULE_NAME} Log Level set to {log_level}", flush=True)
         finally:
             # Restore the original log level
             logging.getLogger().setLevel(current_level)
