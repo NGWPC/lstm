@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 
 logger = logging.getLogger()
+_configured = False
 
 import sys   
 from datetime import datetime, timezone
@@ -153,6 +154,21 @@ def configure_logging():
     See also https://docs.python.org/3/library/logging.html
     
     '''
+    global _configured # Tell Python this refers to the module-level variable
+    modulePathEnvVarSet = os.getenv(EV_MODULE_LOGFILEPATH, "")
+    if modulePathEnvVarSet and _configured:
+        return # Nothing to do — already configured, and env var is set
+    elif not modulePathEnvVarSet and _configured:
+        # Need set a log file since the ngen.log was truncated.
+        logFilePath, appendEntries = get_log_file_path()
+        if (logFilePath):
+            # Set the open mode
+            openMode = 'a' if appendEntries else 'w'
+            handler = logging.FileHandler(logFilePath, mode=openMode)
+        else:
+            handler = logging.StreamHandler(sys.stdout)
+        return
+
     loggingEnabled = True
     moduleEnvVar = os.getenv(EV_EWTS_LOGGING, "")
     if moduleEnvVar:
@@ -212,4 +228,7 @@ def configure_logging():
         finally:
             # Restore the original log level
             logging.getLogger().setLevel(current_level)
+
+    # Set this true so the logger is only configured once
+    _configured = True
  
