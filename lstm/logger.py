@@ -1,20 +1,13 @@
-#
-# Copyright (C) 2025 Austin Raney, Lynker
-#
-# Author: Austin Raney <araney@lynker.com>
-#
+"""Logging module to integrate with NGEN"""
+
 from __future__ import annotations
 
-import logging
-
-logger = logging.getLogger()
-_configured = False
-
-import sys   
-from datetime import datetime, timezone
-import os
-import time
 import getpass
+import logging
+import os
+import sys   
+import time
+from datetime import datetime, timezone
 
 MODULE_NAME           = "LSTM";
 LOG_DIR_NGENCERF      = "/ngencerf/data";       # ngenCERF log directory string if environement var empty.
@@ -29,6 +22,8 @@ EV_MODULE_LOGLEVEL    = "LSTM_LOGLEVEL";        # This modules log level
 EV_MODULE_LOGFILEPATH = "LSTM_LOGFILEPATH";     # This modules log full log filename
 
 class CustomFormatter(logging.Formatter):
+    """A custom formatting class for logging"""
+
     LEVEL_NAME_MAP = {
         logging.DEBUG: "DEBUG",
         logging.INFO: "INFO",
@@ -36,6 +31,21 @@ class CustomFormatter(logging.Formatter):
         logging.ERROR: "SEVERE",
         logging.CRITICAL: "FATAL"
     }
+ 
+    # Apply custom formatter (UTC timestamps applied only to this formatter)
+    def converter(self, timestamp):
+        """Override time converter to return UTC time tuple"""
+        return time.gmtime(timestamp)
+
+    def formatTime(self, record, datefmt=None):
+        """Use our UTC converter"""
+        ct = self.converter(record.created)
+        if datefmt:
+            s = time.strftime(datefmt, ct)
+        else:
+            t = time.strftime("%Y-%m-%d %H:%M:%S", ct)
+            s = f"{t},{int(record.msecs):03d}"
+        return s
 
     def format(self, record):
         original_levelname = record.levelname
@@ -73,6 +83,7 @@ def get_log_file_path():
         if ngenEnvVar:
             logFilePath = ngenEnvVar
         else:
+            print(f"Module {MODULE_NAME} Env var {EV_NGEN_LOGFILEPATH} not found. Creating default log name.")
             appendEntries = False
             if os.path.isdir(LOG_DIR_NGENCERF):
                 logFileDir = LOG_DIR_NGENCERF + DS + LOG_DIR_DEFAULT
@@ -83,12 +94,12 @@ def get_log_file_path():
                 # Set full log path
                 username = getpass.getuser()
                 if username:
-                    logFieDir = logFieDir + DS + username
+                    logFileDir = logFileDir + DS + username
                 else:
                     logFileDir = logFileDir + DS + create_timestamp(True)
                 # Create directory
-                with os.makedirs(logFileDir, exist_ok=True):
-                    logFilePath = logFileDir + DS + MODULE_NAME + "_" + create_timestamp() + "." + LOG_FILE_EXT
+                os.makedirs(logFileDir, exist_ok=True)
+                logFilePath = logFileDir + DS + MODULE_NAME + "_" + create_timestamp() + "." + LOG_FILE_EXT
             except Exception as e:
                 logFilePath = ""
 
@@ -105,18 +116,16 @@ def get_log_file_path():
         else:
             raise IOError
     except:
-        print(f"Unable to open log file for {MODULE_NAME}: {logFilePath}", flush=True)
-        print(f"Log entries will be writen to stdout", flush=True)
+        print(f"Module {MODULE_NAME} Unable to open log file: {logFilePath}", flush=True)
+        print(f"Module {MODULE_NAME} Log entries will be writen to stdout", flush=True)
 
     return logFilePath, appendEntries
     
 def get_log_level() -> str:
     levelEnvVar = os.getenv(EV_MODULE_LOGLEVEL, "")
     if levelEnvVar:
-        print(f"{EV_MODULE_LOGLEVEL}={levelEnvVar}", flush=True)
         return levelEnvVar.strip().upper()
     else:
-        print(f"{EV_MODULE_LOGLEVEL} not found. Using INFO log level", flush=True)
         return "INFO"
 
 def translate_ngwpc_log_level(ngwpc_log_level: str) -> str:
@@ -126,16 +135,27 @@ def translate_ngwpc_log_level(ngwpc_log_level: str) -> str:
     elif (ll == "FATAL"):
         return "CRITICAL"
     return ll
-    
+
+def force_info(handler, logger, msg, *args):
+    record = logger.makeRecord(
+        logger.name,
+        logging.INFO,
+        __file__,
+        0,
+        msg,
+        args,
+        None,
+    )
+    handler.emit(record)
+
 def configure_logging():
     '''
     Set logging level and specify logger configuration based on environment variables set by ngen
     
     Arguments
     ---------
-    logging._Level: Log level 
-    ** Not used in NGWPC version. Instead the ngen logger defines environment variables that are read
-    
+    none
+
     Returns
     -------
     None
@@ -152,83 +172,59 @@ def configure_logging():
           it is only opened once for each ngen run (vs for each catchment)
 
     See also https://docs.python.org/3/library/logging.html
-    
+
     '''
-    global _configured # Tell Python this refers to the module-level variable
-    modulePathEnvVarSet = os.getenv(EV_MODULE_LOGFILEPATH, "")
-    if modulePathEnvVarSet and _configured:
-        return # Nothing to do — already configured, and env var is set
-    elif not modulePathEnvVarSet and _configured:
-        # Need set a log file since the ngen.log was truncated.
-        logFilePath, appendEntries = get_log_file_path()
-        if (logFilePath):
-            # Set the open mode
-            openMode = 'a' if appendEntries else 'w'
-            handler = logging.FileHandler(logFilePath, mode=openMode)
-        else:
-            handler = logging.StreamHandler(sys.stdout)
-        return
+    
+    # Use a named logger to ensure entries are identified as this
+    # MODULE_NAME and are not miss-identfied in the ngen log.
+    logger = logging.getLogger(MODULE_NAME)
+    if getattr(logger, "_initialized", False):
+        return  # logger already initialized, nothing else to do
 
     loggingEnabled = True
     moduleEnvVar = os.getenv(EV_EWTS_LOGGING, "")
     if moduleEnvVar:
-        print(f"{EV_EWTS_LOGGING}={moduleEnvVar}", flush=True)
         if (moduleEnvVar == "DISABLED"):
             loggingEnabled = False
     else:
-        print(f"{EV_EWTS_LOGGING} not found.", flush=True)
-
+        print(f"Module {MODULE_NAME} Env var {EV_EWTS_LOGGING} not found. Using logging defaults.")
+ 
     if (loggingEnabled == False):
         print(f"Module {MODULE_NAME} Logging DISABLED", flush=True)
-        logging.disable(logging.CRITICAL)  # Disables all logs at CRITICAL and below (i.e., everything)
+        logger.disabled = True  # Disables all logs at CRITICAL and below (i.e., everything)
     else:
         print(f"Module {MODULE_NAME} Logging ENABLED", flush=True)
-
-        # Get the log file name from env var or a default 
+ 
+        # Get the log file name from env var or a default
         logFilePath, appendEntries = get_log_file_path()
         if (logFilePath):
             # Set the open mode
             openMode = 'a' if appendEntries else 'w'
             handler = logging.FileHandler(logFilePath, mode=openMode)
         else:
+            print(f"Module {MODULE_NAME} unable to create log file. Using stdout.")
             handler = logging.StreamHandler(sys.stdout)
-
+ 
         # Get the log level from env var or a default
         log_level = get_log_level()
-
+ 
         # Format the module name: uppercase, fixed length, left-justify or trimmed
         formatted_module = MODULE_NAME.upper().ljust(LOG_MODULE_NAME_LEN)[:LOG_MODULE_NAME_LEN]
-
+ 
         # Apply custom formatter
-        formatted_module = MODULE_NAME.upper().ljust(LOG_MODULE_NAME_LEN)[:LOG_MODULE_NAME_LEN]
         formatter = CustomFormatter(
             fmt=f"%(asctime)s.%(msecs)03d {formatted_module} %(levelname_padded)s %(message)s",
             datefmt="%Y-%m-%dT%H:%M:%S"
         )
         handler.setFormatter(formatter)
-
-        # Setup root logger
-        logging.getLogger().handlers.clear()  # Clear any default handlers
-        logging.getLogger().setLevel(translate_ngwpc_log_level(log_level))
-        logging.getLogger().addHandler(handler)
-
-        # Ensure UTC timestamps
-        logging.Formatter.converter = time.gmtime
-
-        # Save the current log level
-        current_level = logging.getLogger().getEffectiveLevel()
-
-        try:
-            # Temporarily set log level to INFO
-            logging.getLogger().setLevel(logging.INFO)
-            
-            # Log the message at INFO level
-            logging.info(f"Log level set to {log_level}")
-            print(f"Module {MODULE_NAME} Log Level set to {log_level}", flush=True)
-        finally:
-            # Restore the original log level
-            logging.getLogger().setLevel(current_level)
-
-    # Set this true so the logger is only configured once
-    _configured = True
  
+        # Setup logger
+        logger.handlers.clear()  # Clear any default handlers
+        logger.setLevel(translate_ngwpc_log_level(log_level))
+        logger.addHandler(handler)
+ 
+        # Write log level INFO message to log regradless of the actual log level
+        force_info(handler, logger, "Log level set to %s", log_level)
+        print(f"Module {MODULE_NAME} Log Level set to {log_level}", flush=True)
+
+    logger._initialized = True
