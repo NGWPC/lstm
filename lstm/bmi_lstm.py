@@ -62,8 +62,11 @@ import yaml
 
 from . import nextgen_cuda_lstm
 from .base import BmiBase
-from .logger import configure_logging, logger
+from .logger import configure_logging, MODULE_NAME
 from .model_state import State, StateFacade, Var
+
+import logging
+LOG = logging.getLogger(MODULE_NAME)
 
 # --------------   Dynamic Attributes -----------------------------
 _dynamic_input_vars = [
@@ -282,7 +285,7 @@ def initialize_lstm(cfg: dict[str, typing.Any]) -> nextgen_cuda_lstm.Nextgen_Cud
 def gather_inputs(
     state: Valuer, internal_input_names: typing.Iterable[str]
 ) -> npt.NDArray:
-    logger.debug("Collecting LSTM inputs ...")
+    LOG.debug("Collecting LSTM inputs ...")
 
     input_list = []
     for lstm_name in internal_input_names:
@@ -291,29 +294,29 @@ def gather_inputs(
         assert value.size == 1, "`value` should a single scalar in a 1d array"
         input_list.append(value[0])
 
-        logger.debug(f"  {lstm_name=}")
-        logger.debug(f"  {bmi_name=}")
-        logger.debug(f"  {type(value)=}")
-        logger.debug(f"  {value=}")
+        LOG.debug(f"  {lstm_name=}")
+        LOG.debug(f"  {bmi_name=}")
+        LOG.debug(f"  {type(value)=}")
+        LOG.debug(f"  {value=}")
 
     collected = bmi_array(input_list)
-    logger.debug(f"Collected inputs: {collected}")
+    LOG.debug(f"Collected inputs: {collected}")
     return collected
 
 
 def scale_inputs(
     input: npt.NDArray, mean: npt.NDArray, std: npt.NDArray
 ) -> npt.NDArray:
-    logger.debug("Normalizing the tensor...")
-    logger.debug("  input_mean =", mean)
-    logger.debug("  input_std  =", std)
+    LOG.debug("Normalizing the tensor...")
+    LOG.debug("  input_mean =", mean)
+    LOG.debug("  input_std  =", std)
 
     # Center and scale the input values for use in torch
     input_array_scaled = (input - mean) / std
-    logger.debug(f"### input_array ={input}")
-    logger.debug(f"### dtype(input_array) ={input.dtype}")
-    logger.debug(f"### type(input_array_scaled) ={type(input_array_scaled)}")
-    logger.debug(f"### dtype(input_array_scaled) ={input_array_scaled.dtype}")
+    LOG.debug(f"### input_array ={input}")
+    LOG.debug(f"### dtype(input_array) ={input.dtype}")
+    LOG.debug(f"### type(input_array_scaled) ={type(input_array_scaled)}")
+    LOG.debug(f"### dtype(input_array_scaled) ={input_array_scaled.dtype}")
     return input_array_scaled
 
 
@@ -324,7 +327,7 @@ def scale_outputs(
     output_std: npt.NDArray,
     output_scale_factor_cms: float,
 ):
-    logger.debug(f"model output: {output[0, 0, 0].numpy().tolist()}")
+    LOG.debug(f"model output: {output[0, 0, 0].numpy().tolist()}")
 
     if cfg["target_variables"][0] in ["qobs_mm_per_hour", "QObs(mm/hr)", "QObs(mm/h)"]:
         surface_runoff_mm = output[0, 0, 0].numpy() * output_std + output_mean
@@ -458,7 +461,7 @@ class bmi_LSTM(BmiBase):
     def update_until(self, time: float) -> None:
         if time <= self.get_current_time():
             current_time = self.get_current_time()
-            logger.warning(f"no update performed: {time=} <= {current_time=}")
+            LOG.warning(f"no update performed: {time=} <= {current_time=}")
             return None
 
         n_steps, remainder = divmod(
@@ -466,7 +469,7 @@ class bmi_LSTM(BmiBase):
         )
 
         if remainder != 0:
-            logger.warning(
+            LOG.warning(
                 f"time is not multiple of time step size. updating until: {time - remainder=} "
             )
 
