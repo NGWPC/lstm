@@ -406,15 +406,16 @@ class bmi_LSTM(BmiBase):
         self.ensemble_members: list[EnsembleMember]
 
     def initialize(self, config_file: str) -> None:
+
+        # configure the Error Warning and Trapping System logger
+        configure_logging()
+
+        LOG.info(f"Initializing with {config_file}")
+
         # read and setup main configuration file
         with open(config_file, "r") as fp:
             self.cfg_bmi = yaml.safe_load(fp)
         coerce_config(self.cfg_bmi)
-
-        # TODO: aaraney: config logging levels to python logging levels
-        # setup logging
-        # self.cfg_bmi["verbose"]
-        configure_logging()
 
         # ----------- The output is area normalized, this is needed to un-normalize it
         #                         mm->m                             km2 -> m2          hour->s
