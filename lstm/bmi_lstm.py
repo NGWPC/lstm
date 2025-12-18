@@ -300,7 +300,7 @@ def gather_inputs(
         LOG.debug(f"  {value=}")
 
     collected = bmi_array(input_list)
-    LOG.debug(f"Collected inputs: {collected}")
+    LOG.debug(f"Collected inputs: %s", collected)
     return collected
 
 
@@ -308,15 +308,15 @@ def scale_inputs(
     input: npt.NDArray, mean: npt.NDArray, std: npt.NDArray
 ) -> npt.NDArray:
     LOG.debug("Normalizing the tensor...")
-    LOG.debug("  input_mean =", mean)
-    LOG.debug("  input_std  =", std)
+    LOG.debug("  input_mean = %s", mean)
+    LOG.debug("  input_std  = %s", std)
 
     # Center and scale the input values for use in torch
     input_array_scaled = (input - mean) / std
-    LOG.debug(f"### input_array ={input}")
-    LOG.debug(f"### dtype(input_array) ={input.dtype}")
-    LOG.debug(f"### type(input_array_scaled) ={type(input_array_scaled)}")
-    LOG.debug(f"### dtype(input_array_scaled) ={input_array_scaled.dtype}")
+    LOG.debug("### input_array = %s", input)
+    LOG.debug("### dtype(input_array) = %s", input.dtype)
+    LOG.debug("### type(input_array_scaled) = %s", type(input_array_scaled))
+    LOG.debug("### dtype(input_array_scaled) = %s", input_array_scaled.dtype)
     return input_array_scaled
 
 
