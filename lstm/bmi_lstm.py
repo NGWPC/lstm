@@ -88,6 +88,7 @@ _static_input_vars = [
 _output_vars = [
     ("land_surface_water__runoff_volume_flux", "m3 s-1"),
     ("land_surface_water__runoff_depth", "m"),
+    ("precipitation_rate", "mm s-1"),
 ]
 
 # --------------    Name Mappings    -----------------------------
@@ -176,6 +177,9 @@ class EnsembleMember:
         with torch.no_grad():
             inputs = gather_inputs(state, self.input_names)
 
+            # Retrieve precipitation value for output
+            precipitation_mm_h = state.value("atmosphere_water__liquid_equivalent_precipitation_rate")
+
             scaled = scale_inputs(
                 inputs, self.scalars.input_mean, self.scalars.input_std
             )
@@ -193,6 +197,7 @@ class EnsembleMember:
                 self.scalars.output_mean,
                 self.scalars.output_std,
                 self.output_scaling_factor_cms,
+                precipitation_mm_h
             )
 
 
@@ -326,6 +331,7 @@ def scale_outputs(
     output_mean: npt.NDArray,
     output_std: npt.NDArray,
     output_scale_factor_cms: float,
+    precipitation_value: npt.NDArray,
 ):
     LOG.debug(f"model output: {output[0, 0, 0].numpy().tolist()}")
 
@@ -350,6 +356,9 @@ def scale_outputs(
     # (1/1000) * (self.cfg_bmi['area_sqkm'] * 1000*1000) * (1/3600)
     surface_runoff_volume_m3_s = surface_runoff_mm * output_scale_factor_cms
 
+    # Convert precipitation for mm/h to mm/s for output
+    precip_mms = precipitation_value[0] / 3600.0
+
     # TODO: aaraney: consider making this into a class or closure to avoid so
     # many small allocations.
     yield from (
@@ -362,6 +371,11 @@ def scale_outputs(
             name="land_surface_water__runoff_volume_flux",
             unit="m3 s-1",
             value=bmi_array([surface_runoff_volume_m3_s]),
+        ),
+        Var(
+            name="precipitation_rate",
+            unit="mm s-1",
+            value=bmi_array([precip_mms])
         ),
     )
 
