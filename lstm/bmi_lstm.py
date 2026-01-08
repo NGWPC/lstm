@@ -62,7 +62,7 @@ import yaml
 
 from . import nextgen_cuda_lstm
 from .base import BmiBase
-from .logger import configure_logging, MODULE_NAME
+from lstm_ewts import configure_logging, MODULE_NAME
 from .model_state import State, StateFacade, Var
 
 import logging
