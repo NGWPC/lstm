@@ -57,6 +57,7 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+import pickle
 import torch
 import yaml
 
@@ -199,6 +200,16 @@ class EnsembleMember:
                 self.output_scaling_factor_cms,
                 precipitation_mm_h
             )
+
+    def serialize(self):
+        return {
+            "h": self.h_t.numpy(),
+            "c": self.c_t.numpy()
+        }
+
+    def deserialize(self, data: dict):
+        self.h_t = torch.from_numpy(data["h"])
+        self.c_t = torch.from_numpy(data["c"])
 
 
 def bmi_array(arr: list[float]) -> npt.NDArray:
@@ -419,6 +430,10 @@ class bmi_LSTM(BmiBase):
         self.cfg_bmi: dict[str, typing.Any]
         self.ensemble_members: list[EnsembleMember]
 
+        # statically stored seriaized data
+        self._serialized_size = np.array([0], dtype=np.uint64)
+        self._serialized = np.array([], dtype=np.uint8)
+
     def initialize(self, config_file: str) -> None:
 
         # configure the Error Warning and Trapping System logger
@@ -515,16 +530,38 @@ class bmi_LSTM(BmiBase):
         return 0
 
     def get_var_type(self, name: str) -> str:
+        if name == "serialization_state":
+            return self._serialized.dtype.name
+        elif name == "serialization_size" or name == "serialization_create":
+            return self._serialized_size.dtype.name
+        elif name == "serialization_free":
+            return np.dtype(np.intc).name
+        elif name == "reset_time":
+            return np.dtype(np.double).name
         return self.get_value_ptr(name).dtype.name
 
     def get_var_units(self, name: str) -> str:
         return first_containing(name, self._outputs, self._dynamic_inputs).unit(name)
 
     def get_var_itemsize(self, name: str) -> int:
+        if name == "serialization_state":
+            return self._serialized.dtype.itemsize
+        if name == "serialization_size" or name == "serialization_create":
+            return self._serialized_size.dtype.itemsize
+        if name == "serialization_free":
+            return np.dtype(np.intc).itemsize
+        if name == "reset_time":
+            return np.dtype(np.double).itemsize
         return self.get_value_ptr(name).itemsize
 
     def get_var_nbytes(self, name: str) -> int:
-        return self.get_var_itemsize(name) * len(self.get_value_ptr(name))
+        if name == "serialization_create":
+            return self._serialized_size.nbytes
+        if name == "serialization_free":
+            return np.dtype(np.intc).itemsize
+        if name == "reset_time":
+            return np.dtype(np.double).itemsize
+        return self.get_value_ptr(name).nbytes
 
     def get_var_location(self, name: str) -> str:
         # raises KeyError on failure
@@ -553,6 +590,10 @@ class bmi_LSTM(BmiBase):
 
     def get_value_ptr(self, name: str) -> np.ndarray:
         """Returns a _reference_ to a variable's np.NDArray."""
+        if name == "serialization_state":
+            return self._serialized
+        elif name == "serialization_size":
+            return self._serialized_size
         return first_containing(name, self._outputs, self._dynamic_inputs).value(name)
 
     def get_value_at_indices(
@@ -563,9 +604,18 @@ class bmi_LSTM(BmiBase):
         ).value_at_indices(name, dest, inds)
 
     def set_value(self, name: str, src: np.ndarray) -> None:
-        return first_containing(name, self._outputs, self._dynamic_inputs).set_value(
-            name, src
-        )
+        if name == "serialization_state":
+            deserialize_bmi(src, self)
+        elif name == "serialization_create":
+            serialize_bmi(self)
+        elif name == "serialization_free":
+            free_serialized_bmi(self)
+        elif name == "reset_time":
+            self._timestep = 0
+        else:
+            return first_containing(name, self._outputs, self._dynamic_inputs).set_value(
+                name, src
+            )
 
     def set_value_at_indices(
         self, name: str, inds: np.ndarray, src: np.ndarray
@@ -592,6 +642,36 @@ class bmi_LSTM(BmiBase):
         if grid == 0:
             return "scalar"
         raise RuntimeError(f"unsupported grid type: {grid!s}. only support 0")
+
+
+def serialize_bmi(bmi: bmi_LSTM):
+    data = {
+        "dynamic_inputs": bmi._dynamic_inputs.serialize(),
+        "static_inputs": bmi._static_inputs.serialize(),
+        "outputs": bmi._outputs.serialize(),
+        "ensemble": [em.serialize() for em in bmi.ensemble_members],
+        "timestep": bmi._timestep,
+    }
+    serialized = pickle.dumps(data)
+    bmi._serialized = np.array(bytearray(serialized), dtype=np.uint8)
+    bmi._serialized_size[0] = len(bmi._serialized)
+
+
+def deserialize_bmi(array: np.ndarray, bmi: bmi_LSTM):
+    data = bytes(array)
+    deserialized = pickle.loads(data)
+    bmi._dynamic_inputs.deserialize(deserialized["dynamic_inputs"])
+    bmi._static_inputs.deserialize(deserialized["static_inputs"])
+    bmi._outputs.deserialize(deserialized["outputs"])
+    for bmi_em, data_em in zip(bmi.ensemble_members, deserialized["ensemble"], strict=True):
+        bmi_em.deserialize(data_em)
+    bmi._timestep = deserialized["timestep"]
+    free_serialized_bmi(bmi)
+
+
+def free_serialized_bmi(bmi: bmi_LSTM):
+    bmi._serialized_size[0] = 0
+    bmi._serialized = np.array([], dtype=bmi._serialized.dtype)
 
 
 def coerce_config(cfg: dict[str, typing.Any]):
