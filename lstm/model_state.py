@@ -95,7 +95,7 @@ class State:
         return len(self._name_mapping)
 
     def serialize(self):
-        """Return the State represented as a list."""
+        """Return the State represented as a list of dicts representing the `Var` properties."""
         return [
             {"name": var.name, "unit": var.unit, "value": var.value}
             for var in self._name_mapping.values()

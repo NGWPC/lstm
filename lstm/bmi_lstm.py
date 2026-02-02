@@ -605,11 +605,11 @@ class bmi_LSTM(BmiBase):
 
     def set_value(self, name: str, src: np.ndarray) -> None:
         if name == "serialization_state":
-            deserialize_bmi(src, self)
+            self._deserialize(src, self)
         elif name == "serialization_create":
-            serialize_bmi(self)
+            self._serialize(self)
         elif name == "serialization_free":
-            free_serialized_bmi(self)
+            self._free_serialized(self)
         elif name == "reset_time":
             self._timestep = 0
         else:
@@ -643,35 +643,37 @@ class bmi_LSTM(BmiBase):
             return "scalar"
         raise RuntimeError(f"unsupported grid type: {grid!s}. only support 0")
 
+    def _serialize(self):
+        """Convert all dynamic properties that can change after the `bmi_LSTM` has had `initialize()` called into an object that can be serialized through `pickle`. 
+        Then, set the BMI's `_serialized` property to the byte representation of that pickled data and adjust the static `_serialized_size` property."""
+        data = {
+            "dynamic_inputs": self._dynamic_inputs.serialize(),
+            "static_inputs": self._static_inputs.serialize(),
+            "outputs": self._outputs.serialize(),
+            "ensemble": [em.serialize() for em in self.ensemble_members],
+            "timestep": self._timestep,
+        }
+        serialized = pickle.dumps(data)
+        self._serialized = np.array(bytearray(serialized), dtype=np.uint8)
+        self._serialized_size[0] = len(self._serialized)
 
-def serialize_bmi(bmi: bmi_LSTM):
-    data = {
-        "dynamic_inputs": bmi._dynamic_inputs.serialize(),
-        "static_inputs": bmi._static_inputs.serialize(),
-        "outputs": bmi._outputs.serialize(),
-        "ensemble": [em.serialize() for em in bmi.ensemble_members],
-        "timestep": bmi._timestep,
-    }
-    serialized = pickle.dumps(data)
-    bmi._serialized = np.array(bytearray(serialized), dtype=np.uint8)
-    bmi._serialized_size[0] = len(bmi._serialized)
+    def _deserialize(self, array: np.ndarray):
+        """Interpret the bytes of the numpy array as previously pickled data from `_serialize()` and update the current values. 
+        No data structure check will be made on the input array or loaded bytes. It will be assumed that the input data is of the same structure as what is generated from `_serialize()`."""
+        data = bytes(array)
+        deserialized = pickle.loads(data)
+        self._dynamic_inputs.deserialize(deserialized["dynamic_inputs"])
+        self._static_inputs.deserialize(deserialized["static_inputs"])
+        self._outputs.deserialize(deserialized["outputs"])
+        for bmi_em, data_em in zip(self.ensemble_members, deserialized["ensemble"], strict=True):
+            bmi_em.deserialize(data_em)
+        self._timestep = deserialized["timestep"]
+        self._free_serialized()
 
-
-def deserialize_bmi(array: np.ndarray, bmi: bmi_LSTM):
-    data = bytes(array)
-    deserialized = pickle.loads(data)
-    bmi._dynamic_inputs.deserialize(deserialized["dynamic_inputs"])
-    bmi._static_inputs.deserialize(deserialized["static_inputs"])
-    bmi._outputs.deserialize(deserialized["outputs"])
-    for bmi_em, data_em in zip(bmi.ensemble_members, deserialized["ensemble"], strict=True):
-        bmi_em.deserialize(data_em)
-    bmi._timestep = deserialized["timestep"]
-    free_serialized_bmi(bmi)
-
-
-def free_serialized_bmi(bmi: bmi_LSTM):
-    bmi._serialized_size[0] = 0
-    bmi._serialized = np.array([], dtype=bmi._serialized.dtype)
+    def _free_serialized(self):
+        """Clear the current serialized data and set the size property value to 0."""
+        self._serialized_size[0] = 0
+        self._serialized = np.array([], dtype=self._serialized.dtype)
 
 
 def coerce_config(cfg: dict[str, typing.Any]):
