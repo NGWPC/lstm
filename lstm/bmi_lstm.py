@@ -59,6 +59,10 @@ import numpy.typing as npt
 import pandas as pd
 import torch
 import yaml
+try:
+    from yaml import CSafeLoader as SafeLoader
+except ImportError:
+    from yaml import SafeLoader
 
 from . import nextgen_cuda_lstm
 from .base import BmiBase
@@ -147,7 +151,7 @@ class EnsembleMember:
         # load training feature scales
         scaler_file = cfg["run_dir"] / "train_data/train_data_scaler.yml"
         with scaler_file.open("r") as fp:
-            train_data_scaler = yaml.safe_load(fp)
+            train_data_scaler = yaml.load(fp, Loader=SafeLoader)
         self.scalars = load_training_scalars(cfg, train_data_scaler)
 
         # initialize torch lstm object
@@ -428,7 +432,7 @@ class bmi_LSTM(BmiBase):
 
         # read and setup main configuration file
         with open(config_file, "r") as fp:
-            self.cfg_bmi = yaml.safe_load(fp)
+            self.cfg_bmi = yaml.load(fp, Loader=SafeLoader)
         coerce_config(self.cfg_bmi)
 
         # ----------- The output is area normalized, this is needed to un-normalize it
@@ -440,7 +444,7 @@ class bmi_LSTM(BmiBase):
         # initialize ensemble members
         self.ensemble_members = []
         for member_cfg_file in self.cfg_bmi["train_cfg_file"]:
-            cfg = yaml.safe_load(member_cfg_file.read_text())
+            cfg = yaml.load(member_cfg_file.read_text(), Loader=SafeLoader)
             coerce_config(cfg)
             member = EnsembleMember(cfg, output_factor_cms)
             self.ensemble_members.append(member)
