@@ -605,11 +605,11 @@ class bmi_LSTM(BmiBase):
 
     def set_value(self, name: str, src: np.ndarray) -> None:
         if name == "serialization_state":
-            self._deserialize(src, self)
+            self._deserialize(src)
         elif name == "serialization_create":
-            self._serialize(self)
+            self._serialize()
         elif name == "serialization_free":
-            self._free_serialized(self)
+            self._free_serialized()
         elif name == "reset_time":
             self._timestep = 0
         else:
