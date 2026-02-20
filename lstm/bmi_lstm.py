@@ -302,14 +302,13 @@ def gather_inputs(
         value = state.value(bmi_name)
         assert value.size == 1, "`value` should a single scalar in a 1d array"
         input_list.append(value[0])
-
-        LOG.debug(f"  {lstm_name=}")
-        LOG.debug(f"  {bmi_name=}")
-        LOG.debug(f"  {type(value)=}")
-        LOG.debug(f"  {value=}")
+        logger.debug("  lstm_name=%s", lstm_name)
+        logger.debug("  bmi_name=%s", bmi_name)
+        logger.debug("  type(value)=%s", type(value))
+        logger.debug("  value=%s", value)
 
     collected = bmi_array(input_list)
-    LOG.debug(f"Collected inputs: %s", collected)
+    logger.debug("Collected inputs: %s",collected)
     return collected
 
 
@@ -322,10 +321,10 @@ def scale_inputs(
 
     # Center and scale the input values for use in torch
     input_array_scaled = (input - mean) / std
-    LOG.debug("### input_array = %s", input)
-    LOG.debug("### dtype(input_array) = %s", input.dtype)
-    LOG.debug("### type(input_array_scaled) = %s", type(input_array_scaled))
-    LOG.debug("### dtype(input_array_scaled) = %s", input_array_scaled.dtype)
+    logger.debug("### input_array =%s", input)
+    logger.debug("### dtype(input_array) =%s", input.dtype)
+    logger.debug("### type(input_array_scaled) =%s", type(input_array_scaled))
+    logger.debug("### dtype(input_array_scaled) =%s", input_array_scaled.dtype)
     return input_array_scaled
 
 
@@ -337,7 +336,7 @@ def scale_outputs(
     output_scale_factor_cms: float,
     precipitation_value: npt.NDArray,
 ):
-    LOG.debug(f"model output: {output[0, 0, 0].numpy().tolist()}")
+    logger.debug("model output: %s", output[0, 0, 0].numpy().tolist())
 
     if cfg["target_variables"][0] in ["qobs_mm_per_hour", "QObs(mm/hr)", "QObs(mm/h)"]:
         surface_runoff_mm = output[0, 0, 0].numpy() * output_std + output_mean
@@ -480,7 +479,7 @@ class bmi_LSTM(BmiBase):
     def update_until(self, time: float) -> None:
         if time <= self.get_current_time():
             current_time = self.get_current_time()
-            LOG.warning(f"no update performed: {time=} <= {current_time=}")
+            logger.warning("no update performed: time=%s <= current_time=%s", time, current_time)
             return None
 
         n_steps, remainder = divmod(
@@ -488,8 +487,8 @@ class bmi_LSTM(BmiBase):
         )
 
         if remainder != 0:
-            LOG.warning(
-                f"time is not multiple of time step size. updating until: {time - remainder=} "
+            logger.warning(
+                "time is not multiple of time step size. updating until: %s", (time - remainder)
             )
 
         for _ in range(int(n_steps)):
