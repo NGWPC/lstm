@@ -53,6 +53,7 @@ import collections
 import typing
 from dataclasses import dataclass
 from pathlib import Path
+import logging
 
 import numpy as np
 import numpy.typing as npt
@@ -67,11 +68,11 @@ except ImportError:
 
 from . import nextgen_cuda_lstm
 from .base import BmiBase
-from lstm_ewts import configure_logging, MODULE_NAME
 from .model_state import State, StateFacade, Var
 
-import logging
-LOG = logging.getLogger(MODULE_NAME)
+import ewts
+LOG = ewts.get_logger(ewts.LSTM_ID)
+
 
 # --------------   Dynamic Attributes -----------------------------
 _dynamic_input_vars = [
@@ -440,9 +441,9 @@ class bmi_LSTM(BmiBase):
 
     def initialize(self, config_file: str) -> None:
 
-        # configure the Error Warning and Trapping System logger
-        configure_logging()
-
+        # This is required prior to the first log message is issued by t-route.
+        LOG.bind()
+        
         LOG.info(f"Initializing with {config_file}")
 
         # read and setup main configuration file
