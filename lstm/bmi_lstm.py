@@ -71,10 +71,17 @@ from .base import BmiBase
 from .model_state import State, StateFacade, Var
 
 LOG = logging.getLogger("LSTM")
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)s - %(funcName)s]: %(message)s',
-)
+try:
+    from ewts.helper import getenv_any
+    from ewts.logger import configure_existing_logger
+    LSTM_USE_EWTS = True
+except ImportError:
+    LSTM_USE_EWTS = False
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)s - %(funcName)s]: %(message)s',
+    )
+
 
 import os
 
@@ -456,20 +463,15 @@ class bmi_LSTM(BmiBase):
     """model timestep size in seconds"""
 
     def __init__(self) -> None:
-
-        # Determine if running within ngen using EWTS. This must be done  
-        # here when the model actually runs vs when it is imported 
-        # into the ngen Python interpreter to ensure the env vars are set.
-        val = getenv_any("EWTS_USE_NGEN_BRIDGE", "").strip().lower()
-        if val in {"1", "true", "yes", "on"}:
-            try:
-                from ewts.logger import configure_existing_logger
-            except ImportError:
-                LOG.warning("EWTS_USE_NGEN_BRIDGE is set, but EWTS package is not installed. Falling back to default logging.")
-                return
-
-            # Reconfigure logger for EWTS logging
-            configure_existing_logger(LOG)
+        if LSTM_USE_EWTS:
+            # Determine if running within ngen using EWTS. This must be done  
+            # here when the model actually runs vs when it is imported 
+            # into the ngen Python interpreter to ensure the env vars are set.
+            val = getenv_any("EWTS_USE_NGEN_BRIDGE", "").strip().lower()
+            if val in {"1", "true", "yes", "on"}:
+                configure_existing_logger(LOG) # Reconfigure logger for EWTS logging
+            else:
+                LOG.warning("EWTS installed but EWTS_USE_NGEN_BRIDGE not on. Falling back to default logging.")
 
         # _bmi_ variable state; this is separate from lstm ensemble member state.
         self._dynamic_inputs = build_state(_dynamic_input_vars)
