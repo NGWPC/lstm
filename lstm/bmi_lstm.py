@@ -77,11 +77,6 @@ try:
     LSTM_USE_EWTS = True
 except ImportError:
     LSTM_USE_EWTS = False
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)s - %(funcName)s]: %(message)s',
-    )
-
 
 import os
 
@@ -457,7 +452,19 @@ def load_static_attributes(cfg: dict[str, typing.Any], state: State):
         value = cfg[internal_name]
         state.set_value(external_name, bmi_array([value]))
 
+def _configure_stdout_logging():
+    LOG.setLevel(logging.INFO)
 
+    if not LOG.handlers:
+        handler = logging.StreamHandler()
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - "
+            "[%(filename)s:%(lineno)s - %(funcName)s]: %(message)s"
+        ))
+        LOG.addHandler(handler)
+
+    LOG.propagate = False
 class bmi_LSTM(BmiBase):
     _timestep_size_s: typing.Final[int] = 3600
     """model timestep size in seconds"""
@@ -469,9 +476,12 @@ class bmi_LSTM(BmiBase):
             # into the ngen Python interpreter to ensure the env vars are set.
             val = getenv_any("EWTS_USE_NGEN_BRIDGE", "").strip().lower()
             if val in {"1", "true", "yes", "on"}:
-                configure_existing_logger(LOG) # Reconfigure logger for EWTS logging
+                configure_existing_logger(LOG)
             else:
-                LOG.warning("EWTS installed but EWTS_USE_NGEN_BRIDGE not on. Falling back to default logging.")
+                _configure_stdout_logging()
+                LOG.warning("EWTS importable but EWTS_USE_NGEN_BRIDGE not on. Falling back to default logging.")
+        else:
+            _configure_stdout_logging()
 
         # _bmi_ variable state; this is separate from lstm ensemble member state.
         self._dynamic_inputs = build_state(_dynamic_input_vars)
