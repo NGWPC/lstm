@@ -53,6 +53,7 @@ import collections
 import typing
 from dataclasses import dataclass
 from pathlib import Path
+from datetime import datetime, timezone
 import logging
 
 import numpy as np
@@ -70,9 +71,47 @@ from . import nextgen_cuda_lstm
 from .base import BmiBase
 from .model_state import State, StateFacade, Var
 
-import ewts
-LOG = ewts.get_logger(ewts.LSTM_ID)
+LOG = logging.getLogger("LSTM")
+try:
+    from ewts.helper import getenv_any
+    from ewts.logger import configure_existing_logger
+    LSTM_USE_EWTS = True
+except ImportError:
+    LSTM_USE_EWTS = False
 
+import os
+
+# NOTE: Helper function to ensure reading env vars
+# When run within ngen some env vars are set from C++ after the 
+# Python interpreter has started.
+# In embedded Python, os.environ may not reflect those changes.
+# getenv_any() falls back to libc getenv() and syncs os.environ.
+def getenv_any(key: str, default: str = "") -> str:
+    """
+    Get an environment variable reliably even when it is set from C/C++
+    after the Python interpreter has started (embedded Python).
+    Prefers os.environ/os.getenv, falls back to libc getenv.
+    """
+    # First try Python's mapping
+    v = os.environ.get(key)
+    if v is not None:
+        return v
+
+    # Fallback: direct libc getenv (sees process env even if Python mapping is stale)
+    try:
+        import ctypes, ctypes.util
+        libc = ctypes.CDLL(ctypes.util.find_library("c"))
+        libc.getenv.restype = ctypes.c_char_p
+        b = libc.getenv(key.encode("utf-8"))
+        if not b:
+            return default
+        s = b.decode("utf-8")
+
+        # Sync back into os.environ so future lookups work normally
+        os.environ[key] = s
+        return s
+    except Exception:
+        return default
 
 # --------------   Dynamic Attributes -----------------------------
 _dynamic_input_vars = [
@@ -414,12 +453,60 @@ def load_static_attributes(cfg: dict[str, typing.Any], state: State):
         value = cfg[internal_name]
         state.set_value(external_name, bmi_array([value]))
 
+class StdoutStyleFormatter(logging.Formatter):
+
+    INFO_FORMAT = (
+        "%(asctime)s %(name)-8s %(levelname)-7s %(message)s"
+    )
+
+    DETAILED_FORMAT = (
+        "%(asctime)s %(name)-8s %(levelname)-7s "
+        "%(message)s "
+        "[%(filename)s.%(funcName)s(L%(lineno)s)]"
+    )
+
+    def format(self, record):
+        if record.levelno == logging.INFO:
+            self._style._fmt = self.INFO_FORMAT
+        else:
+            self._style._fmt = self.DETAILED_FORMAT
+
+        return super().format(record)
+    
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created, tz=timezone.utc)
+        return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    
+
+def _configure_stdout_logging():
+    LOG.setLevel(logging.INFO)
+
+    if not LOG.handlers:
+        handler = logging.StreamHandler()
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(StdoutStyleFormatter())
+        LOG.addHandler(handler)
+
+    LOG.propagate = False
 
 class bmi_LSTM(BmiBase):
     _timestep_size_s: typing.Final[int] = 3600
     """model timestep size in seconds"""
 
     def __init__(self) -> None:
+        if LSTM_USE_EWTS:
+            # Determine if running within ngen using EWTS. This must be done  
+            # here when the model actually runs vs when it is imported 
+            # into the ngen Python interpreter to ensure the env vars are set.
+            val = getenv_any("EWTS_USE_NGEN_BRIDGE", "").strip().lower()
+            if val in {"1", "true", "yes", "on"}:
+                configure_existing_logger(LOG)
+            else:
+                _configure_stdout_logging()
+                LOG.warning("ewts package installed but EWTS_USE_NGEN_BRIDGE not on. Falling back to default logging.")
+        else:
+            _configure_stdout_logging()
+
         # _bmi_ variable state; this is separate from lstm ensemble member state.
         self._dynamic_inputs = build_state(_dynamic_input_vars)
         self._static_inputs = build_state(_static_input_vars)
@@ -441,9 +528,6 @@ class bmi_LSTM(BmiBase):
 
     def initialize(self, config_file: str) -> None:
 
-        # This is required prior to the first log message is issued by t-route.
-        LOG.bind()
-        
         LOG.info(f"Initializing with {config_file}")
 
         # read and setup main configuration file
